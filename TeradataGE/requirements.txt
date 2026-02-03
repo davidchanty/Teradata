@@ -1,0 +1,3 @@
+teradataml
+teradatasql
+pandas

@@ -1,2 +1,2 @@
-# Teradata
-Add-on package for Teradata functions 
+# Teradata add-on pakcage:
+Teradata In-database Graph Analytics

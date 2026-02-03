@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "TeradataGE" # Must be unique on PyPI
+version = "0.0.1"
+authors = [
+  { name="David TY Chan", email="davidty.chan@teradata.com" },
+]
+description = "Teradata In-database Graph Analytics functions"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests", # Example dependency
+    # Add other dependencies here
+]
+
+[project.urls]
+Homepage = "https://github.com"
+Issues = "https://github.com/issues"
