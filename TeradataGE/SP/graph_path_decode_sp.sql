@@ -66,7 +66,7 @@ BEGIN
   -- Prepare the return result --
   -------------------------------
   SET SqlStr = 'SELECT
-    t.token_no,
+    t.token_no AS path_level,
     t.from_id, t.to_id,
     n1.'||in_node_label_colname||' AS n1_label,
     '||edge_labels_colname||',
@@ -86,7 +86,7 @@ BEGIN
     SET SqlStr = SqlStr||' ORDER BY 1,2,3';
   ELSE
     CALL [install_database].drop_vt_sp(in_output_tblname);
-    SET SqlStr = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (token_no, from_id, to_id)';
+    SET SqlStr = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (path_level, from_id, to_id)';
     EXECUTE IMMEDIATE SqlStr;
     SET SqlStr = 'SELECT NULL';
   END IF;

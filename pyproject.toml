@@ -11,6 +11,8 @@ authors = [
 description = "Teradata In-database Graph Analytics functions"
 readme = "README.md"
 requires-python = ">=3.8"
+[tool.setuptools.package-data]
+"TeradataGE" = ["SP/*.sql"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -20,7 +22,6 @@ dependencies = [
     "requests", # Example dependency
     # Add other dependencies here
 ]
-
 [project.urls]
 Homepage = "https://github.com"
 Issues = "https://github.com/issues"

@@ -1,3 +1,4 @@
-teradataml
-teradatasql
-pandas
+teradataml>=20.0.0.9
+teradatasql>=20.0.0.40
+pandas>=2.2.0
+

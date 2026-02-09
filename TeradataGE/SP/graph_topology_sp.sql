@@ -4,8 +4,10 @@ REPLACE PROCEDURE [install_database].graph_topology_sp
   IN in_from_node_name      VARCHAR(1024),
   IN in_to_node_name        VARCHAR(1024),
   IN in_weight_name         VARCHAR(1024),
-  IN in_from_id             INTEGER,
+  IN in_edgetype_name       VARCHAR(1024),
+  IN in_from_id             VARCHAR(1024),
   IN in_max_level           INTEGER,
+  IN in_edge_pattern        VARCHAR(10000),
   IN in_return_type         CHAR(1),
   IN in_output_tblname      VARCHAR(1024)        
 )
@@ -16,12 +18,15 @@ BEGIN
   DECLARE CondStr                 VARCHAR(1024);
   DECLARE weight_name             VARCHAR(1024);
   DECLARE weight_name2            VARCHAR(1024);
-  DECLARE from_id                 INTEGER;
+  DECLARE from_id                 VARCHAR(1024);
   DECLARE max_level               INTEGER;
+  DECLARE edge_pattern            VARCHAR(10000);
+  DECLARE pattern_len             INTEGER;
+  DECLARE prv_pattern_idx         INTEGER;
   DECLARE cur_level               INTEGER;
   DECLARE rec_cnt                 BIGINT;
   DECLARE return_type             CHAR(1);
-
+  DECLARE idx                     INTEGER;
   DECLARE sp_sql_code             INTEGER;
   DECLARE sp_sql_state            VARCHAR(10);
 
@@ -46,6 +51,12 @@ BEGIN
     SET max_level = in_max_level;
   END IF;
 
+  SET edge_pattern = in_edge_pattern;
+  SET pattern_len = COALESCE(CHAR_Length(edge_pattern),0);
+  IF pattern_len > 0 THEN
+     SET max_level = CHAR_LENGTH(edge_pattern) - CHAR_LENGTH(OREPLACE(edge_pattern, '|', '')) + 1;
+  END IF;
+
   IF in_return_type in ('p','P','n','N') THEN
     SET return_type = UPPER(in_return_type);
   ELSE
@@ -62,37 +73,81 @@ BEGIN
 
   -- Prepare the data in 1st level --
   SET cur_level = 1;
+
+  -- Get the edge type filter if defined --
+  IF pattern_len>0 THEN
+    SET idx = POSITION('|' in edge_pattern);
+    IF idx = 0 THEN
+      SET CondStr = TRIM(edge_pattern);
+    ELSE 
+      SET CondStr = TRIM(SUBSTR(edge_pattern, 1, idx -1));
+      SET edge_pattern = SUBSTR(edge_pattern, idx+1, 10000);
+      SET pattern_len = COALESCE(CHAR_Length(edge_pattern),0);
+    END IF;
+    SET CondStr = ''''||OREPLACE(CondStr, ',', ''',''')||'''';
+    SET CondStr = ' AND '||in_edgetype_name||' IN ('||TRIM(CondStr)||')';
+  ELSE
+    SET CondStr = '';
+  END IF;
+
   SET SqlStr = 'CREATE VOLATILE MULTISET TABLE all_possible_path_vt AS (
   SELECT 
+    '||in_from_node_name||' AS start_id, 
     '||in_from_node_name||' AS from_id, 
     '||in_to_node_name||' AS to_id,
     '||weight_name||' AS weight,
     1(INTEGER) AS path_level,
     CAST(TRIM('||in_from_node_name||')||'',''||TRIM('||in_to_node_name||') AS VARCHAR(16000)) AS fullpath
   FROM '||TRIM(in_tblname)||'
-  WHERE '||in_from_node_name||' ='''||TRIM(from_id)||'''
+  WHERE '||in_from_node_name||' IN ('||TRIM(from_id)||')
   AND '||in_from_node_name||' <> '||in_to_node_name||'
+  '||CondStr||'
   ) WITH DATA
   PRIMARY INDEX (from_id, to_id)
   PARTITION BY path_level
   ON COMMIT PRESERVE ROWS;';
+  --debug--
+  INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
   EXECUTE IMMEDIATE SqlStr;
 
   SET SqlStr = 'CREATE VOLATILE MULTISET TABLE cur_shortest_path_vt AS (
-  SELECT to_id, MIN(weight) AS weight
+  SELECT start_id, to_id, MIN(weight) AS weight
   FROM all_possible_path_vt
-  GROUP BY 1
+  GROUP BY 1,2
   ) WITH DATA
-  UNIQUE PRIMARY INDEX (to_id)
+  UNIQUE PRIMARY INDEX (start_id, to_id)
   ON COMMIT PRESERVE ROWS;';
+  --debug--
+  INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
   EXECUTE IMMEDIATE SqlStr;
 
-  SET SqlStr = 'INSERT INTO cur_shortest_path_vt VALUES ('||TRIM(from_id)||',0.0)';
+--  SET SqlStr = 'INSERT INTO cur_shortest_path_vt VALUES ('||TRIM(from_id)||',0.0)';
+--  EXECUTE IMMEDIATE SqlStr;
+  SET SqlStr = 'INSERT INTO cur_shortest_path_vt 
+  SELECT start_id, start_id, 0 FROM all_possible_path_vt GROUP BY 1,2';
   EXECUTE IMMEDIATE SqlStr;
 
   WHILE (rec_cnt > 0 OR cur_level=1) AND (cur_level < max_level) DO
+
+    -- Get the edge type filter if defined --
+    IF pattern_len>0 THEN
+      SET idx = POSITION('|' in edge_pattern);
+      IF idx = 0 THEN
+        SET CondStr = TRIM(edge_pattern);
+      ELSE 
+        SET CondStr = TRIM(SUBSTR(edge_pattern, 1, idx -1));
+        SET edge_pattern = SUBSTR(edge_pattern, idx+1, 10000);
+        SET pattern_len = COALESCE(CHAR_Length(edge_pattern),0);
+      END IF;
+      SET CondStr = ''''||OREPLACE(CondStr, ',', ''',''')||'''';
+      SET CondStr = ' AND '||in_edgetype_name||' IN ('||TRIM(CondStr)||')';
+    ELSE
+      SET CondStr = '';
+    END IF;
+
     SET SqlStr = 'INSERT INTO all_possible_path_vt
     SELECT
+      a.start_id,
       e.'||in_from_node_name||', e.'||in_to_node_name||',
       a.weight + '||weight_name2||' AS new_weight,
       a.path_level +1,
@@ -106,9 +161,12 @@ BEGIN
     '||CondStr||' 
     )
     LEFT JOIN cur_shortest_path_vt c
-    ON (e.'||in_to_node_name||' = c.to_id)
+    ON (a.start_id = c.start_id
+    AND e.'||in_to_node_name||' = c.to_id)
     WHERE (new_weight < c.weight OR c.weight IS NULL)
     ';
+    --debug--
+    INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
     EXECUTE IMMEDIATE SqlStr;
     SET rec_cnt = ACTIVITY_COUNT;
 
@@ -116,13 +174,15 @@ BEGIN
     SET SqlStr = 'COLLECT STAT ON all_possible_path_vt INDEX ( from_id ,to_id )';
     EXECUTE IMMEDIATE SqlStr;
 
-    SET SqlStr = 'DELETE FROM cur_shortest_path_vt WHERE to_id <>'||TRIM(from_id);
+    SET SqlStr = 'DELETE FROM cur_shortest_path_vt WHERE to_id <> start_id' ;
     EXECUTE IMMEDIATE SqlStr;
 
     SET SqlStr = 'INSERT INTO cur_shortest_path_vt
-    SELECT to_id, MIN(weight)
+    SELECT start_id, to_id, MIN(weight)
     FROM all_possible_path_vt
-    GROUP BY to_id';
+    GROUP BY 1,2';
+    --debug--
+    INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
     EXECUTE IMMEDIATE SqlStr;
 
     SET cur_level = cur_level + 1;
@@ -148,16 +208,23 @@ BEGIN
     SET SqlStr = SqlStr||' ORDER BY 2, 1;';
 
   ELSE
-    SET SqlStr = 'SELECT to_id AS node_id, MIN(weight) AS weight
-    FROM all_possible_path_vt
-    GROUP BY 1 ';
+    SET SqlStr = 'SELECT node_id, path_level, weight
+        FROM
+        (SELECT to_id AS node_id, path_level, weight,
+        ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY weight, path_level, start_id) as rnk
+        FROM all_possible_path_vt) t
+        WHERE rnk=1
+        UNION ALL
+        SELECT start_id AS node_id, 0 AS path_level, 0.0 AS weight 
+        FROM all_possible_path_vt
+        GROUP BY start_id ';
 
     IF in_output_tblname IS NOT NULL THEN
       SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
       EXECUTE IMMEDIATE SqlStr2;
     END IF;
 
-    SET SqlStr = SqlStr||' ORDER BY 2, 1;';
+    SET SqlStr = SqlStr||' ORDER BY 3, 2, 1;';
 
   END IF;
 

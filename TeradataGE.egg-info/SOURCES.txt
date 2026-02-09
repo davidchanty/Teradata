@@ -1,0 +1,15 @@
+LICENSE
+README.md
+pyproject.toml
+TeradataGE/__init__.p.py
+TeradataGE/configure.py
+TeradataGE/install_db_objects.py
+TeradataGE/td_graph_function.py
+TeradataGE.egg-info/PKG-INFO
+TeradataGE.egg-info/SOURCES.txt
+TeradataGE.egg-info/dependency_links.txt
+TeradataGE.egg-info/top_level.txt
+TeradataGE/SP/drop_vt_sp.sql
+TeradataGE/SP/graph_path_decode_sp.sql
+TeradataGE/SP/graph_shortest_path_sp.sql
+TeradataGE/SP/graph_topology_sp.sql
