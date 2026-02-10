@@ -117,7 +117,7 @@ class td_graph_object:
     #########################################################
     # Get and set the from node id from label for source id #
     #########################################################
-    def set_node_id_from_label_source(self, label, nodetype=None):
+    def set_node_id_from_label_source(self, label, nodetype=None, show_query=False):
         if self.node_table_name is None:
             raise ValueError("Missing Node Table Name (node_table_name)")
         if self.node_id_column_name is None:
@@ -146,6 +146,8 @@ class td_graph_object:
                       FROM {self.node_table_name}
                       WHERE {self.node_label_column_name} Like '{label}'
                       {cond1}"""
+        if show_query:
+            print(SQL)
         df = tdml.DataFrame.from_query(SQL).to_pandas().reset_index()
         if (df.shape[0] == 0):
             target_id = None
@@ -161,7 +163,7 @@ class td_graph_object:
     #########################################################
     # Get and set the from node id from label for target id #
     #########################################################
-    def set_node_id_from_label_target(self, label):
+    def set_node_id_from_label_target(self, label, show_query=False):
         if self.node_table_name is None:
             raise ValueError("Missing Node Table Name (node_table_name)")
         if self.node_id_column_name is None:
@@ -171,6 +173,8 @@ class td_graph_object:
         SQL = f"""SELECT {self.node_id_column_name} AS node_id 
                   FROM {self.node_table_name}
                   WHERE {self.node_label_column_name} Like '%{label}%'"""
+        if show_query:
+            print(SQL)
         df = tdml.DataFrame.from_query(SQL).to_pandas().reset_index()
         self.target_id = int(df.iloc[0,0])
         return self.target_id
@@ -183,7 +187,9 @@ class td_graph_object:
                     source_id = None, 
                     edge_pattern = None,
                     max_path_length=100, 
-                    return_data = 'P', output_table = None):
+                    return_data = 'P', 
+                    output_table = None,
+                    show_query = False):
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -246,6 +252,8 @@ class td_graph_object:
                                                         '{return_data.upper()}',
                                                          {output_table_adj}
                                                         );"""
+        if show_query:
+            print(SQL)
         result = tdml.execute_sql(SQL)
         rows0 = result.fetchall()
         result.nextset()
@@ -265,7 +273,7 @@ class td_graph_object:
     ######################################################
     # Caculate the shortpath from source_id to target_id #
     ######################################################
-    def td_shortest_path(self, source_id = None, target_id = None, max_path_length=100, output_table = None ):
+    def td_shortest_path(self, source_id = None, target_id = None, max_path_length=100, output_table = None, show_query = False ):
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -316,6 +324,8 @@ class td_graph_object:
                                                               {max_path_length},
                                                               {output_table_adj}
                                                              );"""
+        if show_query:
+            print(SQL)
         result = tdml.execute_sql(SQL)
         rows0 = result.fetchall()
         result.nextset()
@@ -330,7 +340,7 @@ class td_graph_object:
     ################################################################################
     # Converting existing path from node id to node label with optional attributes #
     ################################################################################
-    def td_graph_path_decode(self, input_table, edge_attributes=None, output_table = None):
+    def td_graph_path_decode(self, input_table, edge_attributes=None, output_table = None, show_query = False):
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -375,6 +385,9 @@ class td_graph_object:
                                                            '{self.node_label_column_name}',
                                                            {output_table_adj})"""
 
+        if show_query:
+            print(SQL)
+
         result = tdml.execute_sql(SQL)
         rows0 = result.fetchall()
         result.nextset()
@@ -386,7 +399,7 @@ class td_graph_object:
     ###############################################################################
     # Decode node information from node id to node label with optional attributes #
     ###############################################################################
-    def td_graph_node_decode(self, input_table, node_attributes=None, output_table = None):
+    def td_graph_node_decode(self, input_table, node_attributes=None, output_table = None, show_query = False):
         if self.node_table_name is None:
             raise ValueError("Missing Node Table Name (node_table_name)")
         if self.node_id_column_name is None:
@@ -417,6 +430,8 @@ class td_graph_object:
                 FROM {input_table} i
                 LEFT JOIN {self.node_table_name} n
                 ON (i.Node_id = n.{self.node_id_column_name})"""
+        if show_query:
+            print(SQL)
 
         df = tdml.DataFrame.from_query(SQL).to_pandas()
         return(df)
