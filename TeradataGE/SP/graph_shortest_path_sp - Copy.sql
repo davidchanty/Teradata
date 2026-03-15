@@ -7,8 +7,7 @@ REPLACE PROCEDURE [install_database].graph_shortest_path_sp
   IN in_from_id             INTEGER,
   IN in_to_id               INTEGER,
   IN in_max_level           INTEGER,
-  IN in_output_tblname      VARCHAR(1024),
-  IN in_output_volatile     BYTEINT
+  IN in_output_tblname      VARCHAR(1024)
 )
 DYNAMIC RESULT SETS 1
 BEGIN
@@ -139,11 +138,7 @@ BEGIN
 
   IF in_output_tblname IS NOT NULL THEN
     CALL [install_database].drop_vt_sp(in_output_tblname);
-    IF in_output_volatile = 1 THEN
-      SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX ON COMMIT PRESERVE ROWS';
-    ELSE
-      SET SqlStr2 = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
-    END IF;
+    SET SqlStr2 = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
     EXECUTE IMMEDIATE SqlStr2;
   END IF;
 

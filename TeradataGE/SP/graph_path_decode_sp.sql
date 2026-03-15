@@ -5,16 +5,19 @@ REPLACE PROCEDURE [install_database].graph_path_decode_sp
   IN in_edge_tblname              VARCHAR(1024),
   IN in_edge_from_colname         VARCHAR(1024),
   IN in_edge_to_colname           VARCHAR(1024),
+  IN in_edge_weight_colname       VARCHAR(1024),
   IN in_edge_labels_colname       VARCHAR(1024),
   IN in_node_tblname              VARCHAR(1024),
   IN in_node_colname              VARCHAR(1024),
   IN in_node_label_colname        VARCHAR(1024),
-  IN in_output_tblname            VARCHAR(1024)        
+  IN in_output_tblname            VARCHAR(1024),
+  IN in_output_volatile           BYTEINT
 )
 DYNAMIC RESULT SETS 1
 BEGIN
   DECLARE SqlStr                  VARCHAR(32000);
-  DECLARE edge_labels_colname     VARCHAR(32000);
+  DECLARE edge_labels_colname     VARCHAR(1024);
+  DECLARE edge_weight_colname     VARCHAR(1024);
   DECLARE sp_sql_code             INTEGER;
   DECLARE sp_sql_state            VARCHAR(10);
 
@@ -26,6 +29,12 @@ BEGIN
   -- Select the columnsname --
   SELECT OREPLACE(:in_edge_labels_colname, '|', ',e.') INTO :edge_labels_colname;
   SET edge_labels_colname = 'e.'||edge_labels_colname;
+
+  IF in_edge_weight_colname IS NULL THEN
+    SET edge_weight_colname = '1.0 AS weight';
+  ELSE
+    SET edge_weight_colname = TRIM(in_edge_weight_colname)||' AS weight';
+  END IF;
 
   ----------------------------------------
   -- Prepare all the unique pairs nodes --
@@ -70,7 +79,8 @@ BEGIN
     t.from_id, t.to_id,
     n1.'||in_node_label_colname||' AS n1_label,
     '||edge_labels_colname||',
-    n2.'||in_node_label_colname||' AS n2_label
+    n2.'||in_node_label_colname||' AS n2_label,
+    '||edge_weight_colname||'
   FROM 
     (SELECT from_id, to_id, MIN(token_no) AS token_no FROM graph_topoplogy_decode_vt GROUP BY 1,2) t,
     '||in_node_tblname||' n1,
@@ -86,7 +96,11 @@ BEGIN
     SET SqlStr = SqlStr||' ORDER BY 1,2,3';
   ELSE
     CALL [install_database].drop_vt_sp(in_output_tblname);
-    SET SqlStr = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (path_level, from_id, to_id)';
+    IF in_output_volatile = 1 THEN
+      SET SqlStr = 'CREATE MULTISET VOLATILE TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (path_level, from_id, to_id) ON COMMIT PRESERVE ROWS';
+    ELSE
+      SET SqlStr = 'CREATE MULTISET TABLE '||in_output_tblname||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (path_level, from_id, to_id)';
+    END IF;
     EXECUTE IMMEDIATE SqlStr;
     SET SqlStr = 'SELECT NULL';
   END IF;

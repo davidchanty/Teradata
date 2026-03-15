@@ -1,11 +1,13 @@
 import teradataml as tdml
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 
 from teradataml.common import messages
 from teradataml.common.constants import TeradataConstants, ValibConstants as VC
 from teradataml.common.exceptions import TeradataMlException
 from teradataml.common.messages import Messages, MessageCodes
+from teradataml.context.context import _get_user
 
 from TeradataGE import configure
 
@@ -15,12 +17,37 @@ from TeradataGE import configure
 # Start of td_graph_function Class #
 ####################################
 class td_graph_object:
+    """
+    TeradataGE class to store the definition for the graph object, including Edge and Node information
+
+    Attributes:
+        edge_table_name (str): Table/view name for EDGE
+        edge_from_node_column_name (str): Column name for the FROM node id in edge table
+        edge_to_node_column_name (str): Column name for the TO node id in edge table
+        edge_type_column_name (str): [Optional] Column name for Edge Type. Default is not edge type
+        edge_weight_column_name (str): [Optional] Column name for weight/probability. Default is no weight
+        datetime_column_name (str): [Optional] Date or Time stamp column for temporal process. Default is no. If it's defined, only the next edge is the date or time greater than previous edge
+        weight_type (str): [Optional] If weight column is defined, weight type should be W(for weight) or P(for probability).
+        edge_attributes (str): [Optional] List of attributes column(s) for edge
+        node_table_name (str): [Optional] Table/view name for NODE
+        node_id_column_name (str): [Optional] node id column name
+        node_type_column_name (str): [Optional] node type
+        node_label_column_name (str): [Optional] Node name label for display
+        source_id (integer): [Optional] List of starting node id (can be added later)
+        target_id (integer): [Optional] List of targeting node id (can be added later)
+
+    Example:
+        td_graph_obj = td_graph_function.td_graph_object(etc...)
+
+    """
     def __init__(self,
                  edge_table_name,
                  edge_from_node_column_name,
                  edge_to_node_column_name,
                  edge_type_column_name = None,
                  edge_weight_column_name = None,
+                 datetime_column_name = None,
+                 weight_type = 'W',
                  edge_attributes = None,
                  node_table_name = None,
                  node_id_column_name = None,
@@ -43,6 +70,8 @@ class td_graph_object:
         self.edge_to_node_column_name = edge_to_node_column_name
         self.edge_type_column_name = edge_type_column_name
         self.edge_weight_column_name = edge_weight_column_name
+        self.datetime_column_name = datetime_column_name
+        self.weight_type = weight_type
         self.edge_attributes = edge_attributes
         self.node_table_name = node_table_name
         self.node_id_column_name = node_id_column_name
@@ -117,7 +146,7 @@ class td_graph_object:
     #########################################################
     # Get and set the from node id from label for source id #
     #########################################################
-    def set_node_id_from_label_source(self, label, nodetype=None, show_query=False):
+    def set_node_id_from_label_source(self, label, nodetype=None, if_exists = 'replace', show_query=False):
         if self.node_table_name is None:
             raise ValueError("Missing Node Table Name (node_table_name)")
         if self.node_id_column_name is None:
@@ -144,7 +173,7 @@ class td_graph_object:
 
             SQL = f"""SELECT {self.node_id_column_name} AS node_id 
                       FROM {self.node_table_name}
-                      WHERE {self.node_label_column_name} Like '{label}'
+                      WHERE {self.node_label_column_name} = '{label}'
                       {cond1}"""
         if show_query:
             print(SQL)
@@ -152,11 +181,14 @@ class td_graph_object:
         if (df.shape[0] == 0):
             target_id = None
         elif (df.shape[0] == 1):
-            target_id = int(df.iloc[0,0])
+            target_id = [int(df.iloc[0,0])]
         else:
             target_id = df['node_id'].tolist()
 
-        self.source_id = target_id 
+        if if_exists == 'append' and len(self.source_id)>0:
+            self.source_id += target_id
+        else:
+            self.source_id = target_id 
         return self.source_id
 
 
@@ -186,10 +218,13 @@ class td_graph_object:
     def td_topology(self, 
                     source_id = None, 
                     edge_pattern = None,
-                    max_path_length=100, 
+                    max_path_length = 100,
+                    weight_filter = None,
                     return_data = 'P', 
                     output_table = None,
+                    temp_output_table = True,
                     show_query = False):
+
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -198,7 +233,9 @@ class td_graph_object:
             raise ValueError("Missing Edge TO Column name (edge_to_node_column_name)")
         if edge_pattern is not None and self.edge_type_column_name is None:
             raise ValueError("Missing Edge Type for edge pattern(edge_type_column_name)")
-            
+        if weight_filter is not None and self.edge_weight_column_name is None:
+            raise ValueError("Missing weight column (edge_weight_column_name)")
+
 
         if source_id is None:
             if self.source_id is None:
@@ -214,13 +251,39 @@ class td_graph_object:
         else:
             weight_column_adj = f"'{self.edge_weight_column_name}'"
 
-        if return_data.upper() not in ['P','N']:
-            raise ValueError("return_data must be P(path) or N(node) only!!!")
+        if self.datetime_column_name is None or self.datetime_column_name=="" :
+            datetime_column_adj = "NULL"
+        else:
+            datetime_column_adj = f"'{self.datetime_column_name}'"
+
+
+
+        if self.edge_weight_column_name is None:
+            weight_type_adj = "NULL"
+        elif self.weight_type is None:
+            weight_type_adj = "NULL"
+        elif self.weight_type in ['P', 'p']:
+            weight_type_adj = "'P'"
+        else:
+            weight_type_adj = "'W'"
+
+        if weight_filter is None or weight_filter=="":
+            weight_filter_adj = "NULL"
+        else:
+            weight_filter_adj = f"'{weight_filter}'"
+
+        if return_data.upper() not in ['P','N','C']:
+            raise ValueError("return_data must be P(path) or N(node) or C(Closeness Centrality) only!!!")
 
         if output_table is None or output_table=="" :
             output_table_adj = "NULL"
+            temp_output_table_adj = "NULL"
         else:
             output_table_adj = f"'{output_table}'"
+            if temp_output_table:
+                temp_output_table_adj = "1"
+            else:
+                temp_output_table_adj = "0"
             self.topology_path_result_table = output_table
 
         self.max_path_length = max_path_length
@@ -246,34 +309,52 @@ class td_graph_object:
                                                         '{self.edge_to_node_column_name}', 
                                                          {weight_column_adj}, 
                                                         '{self.edge_type_column_name}',
-                                                        '{cur_source_id}', 
+                                                         {datetime_column_adj},
+                                                        '{cur_source_id}',
+                                                         {weight_type_adj},
+                                                         {weight_filter_adj},
                                                          {max_path_length},
                                                          {adj_edge_pattern},
                                                         '{return_data.upper()}',
-                                                         {output_table_adj}
+                                                         {output_table_adj},
+                                                         {temp_output_table_adj}
                                                         );"""
         if show_query:
             print(SQL)
         result = tdml.execute_sql(SQL)
         rows0 = result.fetchall()
-        result.nextset()
-        rows1 = result.fetchall()
-    
-        # All returned paths in dataframe, 1 row per path
-        if return_data.upper() == 'P':
-            local_df = pd.DataFrame(rows1, columns=["fullpath","weight"])
-            self.topology_path_result_column = "fullpath"
+
+        if output_table is None:
+            result.nextset()
+            rows1 = result.fetchall()
+            # All returned paths in dataframe, 1 row per path
+            if return_data.upper() == 'P':
+                df = pd.DataFrame(rows1, columns=["fullpath","weight","path_level"])
+                self.topology_path_result_column = "fullpath"
+            else:
+                df = pd.DataFrame(rows1, columns=["Node","path_level","weight"])
+                self.topology_path_result_column = "node"
         else:
-            local_df = pd.DataFrame(rows1, columns=["Node","path_level","weight"])
-            self.topology_path_result_column = "node"
+            if temp_output_table:
+                df = tdml.DataFrame(tdml.in_schema(_get_user(), output_table))
+            else:
+                df = tdml.DataFrame(output_table)
+
+            if return_data.upper() == 'P':
+                self.topology_path_result_column = "fullpath"
+            else:
+                self.topology_path_result_column = "node"
     
-        return(local_df)
+        return(df)
 
 
     ######################################################
     # Caculate the shortpath from source_id to target_id #
     ######################################################
-    def td_shortest_path(self, source_id = None, target_id = None, max_path_length=100, output_table = None, show_query = False ):
+    def td_shortest_path(self, source_id = None, target_id = None, max_path_length=100, 
+                         output_table = None, 
+                         temp_output_table = True,
+                         show_query = False ):
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -290,6 +371,9 @@ class td_graph_object:
         else:
             self.source_id = source_id
             cur_source_id = source_id
+
+        if isinstance(cur_source_id, list):
+            cur_source_id = cur_source_id[0]
 
         # check which target id to use
         if target_id is None:
@@ -309,9 +393,14 @@ class td_graph_object:
 
         if output_table is None or output_table=="" :
             output_table_adj = "NULL"
+            temp_output_table_adj = "0"
         else:
             output_table_adj = f"'{output_table}'"
             self.shortpath_path_result_table = output_table
+            if temp_output_table:
+              temp_output_table_adj = "1"
+            else:
+              temp_output_table_adj = "0"
 
         self.max_path_length = max_path_length
 
@@ -322,7 +411,8 @@ class td_graph_object:
                                                               {cur_source_id}, 
                                                               {cur_target_id}, 
                                                               {max_path_length},
-                                                              {output_table_adj}
+                                                              {output_table_adj},
+                                                              {temp_output_table_adj}
                                                              );"""
         if show_query:
             print(SQL)
@@ -340,7 +430,13 @@ class td_graph_object:
     ################################################################################
     # Converting existing path from node id to node label with optional attributes #
     ################################################################################
-    def td_graph_path_decode(self, input_table, edge_attributes=None, output_table = None, show_query = False):
+    def td_graph_path_decode(self, 
+                             input_table, 
+                             edge_attributes=None, 
+                             output_table = None, 
+                             temp_output_table = True,
+                             include_plot = False,
+                             show_query = False):
         if self.edge_table_name is None:
             raise ValueError("Missing Edge Table Name (edge_table_name)")
         if self.edge_from_node_column_name is None:
@@ -359,6 +455,11 @@ class td_graph_object:
         if self.topology_path_result_table is None or self.topology_path_result_column is None:
             raise ValueError("Missing topology_path_result_table, please run td_topology function with output table!!!")
 
+        if self.edge_weight_column_name is None or self.edge_weight_column_name=="" :
+            weight_column_adj = "NULL"
+        else:
+            weight_column_adj = f"'{self.edge_weight_column_name}'"
+
         if edge_attributes is None:
             if self.edge_attributes is None:
                 raise ValueError("Missing Edge Attribute column(s) (edge_attributes)!!!")
@@ -368,22 +469,31 @@ class td_graph_object:
             else:
                 self.edge_attributes = [edge_attributes]
 
-        if output_table is not None:
+        if output_table is None:
+            output_table_adj = 'NULL'
+            temp_output_table_adj = "0"
+        else:
             self.topology_path_decode_table = output_table
             output_table_adj = f'{output_table}'
-        else:
-            output_table_adj = 'NULL'
+            self.shortpath_path_result_table = output_table
+            if temp_output_table:
+              temp_output_table_adj = "1"
+            else:
+              temp_output_table_adj = "0"
 
         SQL = f"""CALL {self.graphdb}.graph_path_decode_sp('{input_table}',
                                                            '{self.topology_path_result_column}',
                                                            '{self.edge_table_name}',
                                                            '{self.edge_from_node_column_name}',
                                                            '{self.edge_to_node_column_name}',
+                                                           {weight_column_adj},
                                                            '{"|".join(self.edge_attributes)}',
                                                            '{self.node_table_name}',
                                                            '{self.node_id_column_name}',
                                                            '{self.node_label_column_name}',
-                                                           {output_table_adj})"""
+                                                           {output_table_adj},
+                                                           {temp_output_table_adj}
+                                                           )"""
 
         if show_query:
             print(SQL)
@@ -392,8 +502,40 @@ class td_graph_object:
         rows0 = result.fetchall()
         result.nextset()
         rows1 = result.fetchall()
-        local_df = pd.DataFrame(rows1, columns=["path_level","from_id", "to_id","n1_label"] + self.edge_attributes + ["n2_label"] )
-        return(local_df)
+        local_df = pd.DataFrame(rows1, columns=["path_level","from_id", "to_id","n1_label"] + self.edge_attributes + ["n2_label", "weight"] )
+        local_df = local_df.reset_index(drop=True)
+
+        if include_plot:
+            path_label_df = local_df
+            seen = {}
+            path_label_df['new_from_id'] = [seen.setdefault(x, len(seen)) for x in path_label_df["from_id"].to_list()]
+            path_label_df['new_to_id'] = [seen.setdefault(x, len(seen)) for x in path_label_df["to_id"].to_list()]
+            source = path_label_df['new_from_id'].to_list()
+            target = path_label_df['new_to_id'].to_list()
+            value = path_label_df['weight'].to_list()
+            df_combined = pd.DataFrame({
+                "new_id": pd.concat([path_label_df["new_from_id"], path_label_df["new_to_id"]], ignore_index=True),
+                "label": pd.concat([path_label_df["n1_label"], path_label_df["n2_label"]], ignore_index=True)
+            }).drop_duplicates()
+            labels = df_combined.label.to_list()
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=5,                 # space between nodes
+                    thickness=10,           # node thickness
+                    label=labels,
+                ),
+                link=dict(
+                    source=source,
+                    target=target,
+                    value=value,
+                    hovertemplate="From %{source.label} to %{target.label}: %{value}<extra></extra>"
+                )
+            )])
+            fig.update_layout(font_size=10, width=900, height=600)
+            return(local_df, fig)
+        else:
+            return(local_df)
+
 
 
     ###############################################################################
@@ -412,7 +554,7 @@ class td_graph_object:
         if self.node_type_column_name is None:
             adj_node_type = ""
         else:
-            adj_node_type = f'"{self.node_type_column_name}" AS node_type'
+            adj_node_type = f'"{self.node_type_column_name}" AS node_type,'
 
         if node_attributes is None:
             adj_node_attributes = ""
@@ -424,7 +566,7 @@ class td_graph_object:
         SQL = f"""SELECT 
                    i.path_level,
                    i.weight,
-                   {adj_node_type},
+                   {adj_node_type}
                    {self.node_label_column_name} AS node_name
                    {adj_node_attributes}
                 FROM {input_table} i

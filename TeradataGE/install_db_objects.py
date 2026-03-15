@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 import teradataml as tdml
 
@@ -7,7 +8,7 @@ from teradataml.common.constants import TeradataConstants, ValibConstants as VC
 from teradataml.common.exceptions import TeradataMlException
 from teradataml.common.messages import Messages, MessageCodes
 
-from GraphProject import configure
+from TeradataGE import configure
 
 def install_graph_functions():
 
@@ -19,7 +20,8 @@ def install_graph_functions():
     else:
         graphdb = configure.graph_install_location
 
-    sp_template_location = f'{os.path.dirname(configure.__file__)}\\SP'
+    base_dir = Path(os.path.dirname(configure.__file__))
+    sp_template_location = base_dir / "SP"
 
     for sp_name in ['drop_vt_sp', 'graph_shortest_path_sp', 'graph_topology_sp', 'graph_path_decode_sp']:
         print(f"Installing {sp_name}...")

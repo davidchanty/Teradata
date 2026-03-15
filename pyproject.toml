@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "TeradataGE" # Must be unique on PyPI
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="David TY Chan", email="davidty.chan@teradata.com" },
 ]

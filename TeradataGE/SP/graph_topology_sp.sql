@@ -5,11 +5,15 @@ REPLACE PROCEDURE [install_database].graph_topology_sp
   IN in_to_node_name        VARCHAR(1024),
   IN in_weight_name         VARCHAR(1024),
   IN in_edgetype_name       VARCHAR(1024),
+  IN in_datetime_name       VARCHAR(1024),
   IN in_from_id             VARCHAR(1024),
+  IN in_weight_type         CHAR(1),
+  IN in_weight_filter       VARCHAR(1024),
   IN in_max_level           INTEGER,
   IN in_edge_pattern        VARCHAR(10000),
   IN in_return_type         CHAR(1),
-  IN in_output_tblname      VARCHAR(1024)        
+  IN in_output_tblname      VARCHAR(1024),
+  IN in_output_volatile     BYTEINT
 )
 DYNAMIC RESULT SETS 1
 BEGIN
@@ -19,6 +23,14 @@ BEGIN
   DECLARE weight_name             VARCHAR(1024);
   DECLARE weight_name2            VARCHAR(1024);
   DECLARE from_id                 VARCHAR(1024);
+  DECLARE datetime_cond1          VARCHAR(1024);
+  DECLARE datetime_cond2          VARCHAR(1024);
+  DECLARE weight_type             CHAR(1);
+  DECLARE weight_operator         CHAR(1);
+  DECLARE weight_operator2        CHAR(1);
+  DECLARE weight_operator3        CHAR(3);
+  DECLARE weight_filter           VARCHAR(1024);
+  DECLARE weight_filter2          VARCHAR(1024);
   DECLARE max_level               INTEGER;
   DECLARE edge_pattern            VARCHAR(10000);
   DECLARE pattern_len             INTEGER;
@@ -35,12 +47,35 @@ BEGIN
   ----------------------
   -- Setup parameters --
   ----------------------
+  IF in_datetime_name IS NULL OR in_datetime_name = '' THEN
+    SET datetime_cond1 = '';
+    SET datetime_cond2 = '';
+  ELSE
+    SET datetime_cond1 = 'e.'||in_datetime_name||',';
+    SET datetime_cond2 = 'AND a.'||in_datetime_name||'<=e.'||in_datetime_name;
+  END IF;
+
   IF in_weight_name IS NULL OR in_weight_name = '' THEN
     SET weight_name = '1.0(FLOAT) ';
     SET weight_name2 = '1.0';
+    SET weight_type = 'W';
+    SET weight_operator = '+';
+    SET weight_operator2 = '<';
+    SET weight_operator3 = 'MIN';
   ELSE
     SET weight_name = TRIM(in_weight_name);
     SET weight_name2 = 'e.'||TRIM(in_weight_name);
+    IF in_weight_type in ('P','p') THEN
+      SET weight_type = 'P';
+      SET weight_operator = '*';
+      SET weight_operator2 = '>';
+      SET weight_operator3 = 'MAX';
+    ELSE
+      SET weight_type = 'W';
+      SET weight_operator = '+';
+      SET weight_operator2 = '<';
+      SET weight_operator3 = 'MIN';
+    END IF;
   END IF;
 
   SET from_id = in_from_id;
@@ -57,7 +92,7 @@ BEGIN
      SET max_level = CHAR_LENGTH(edge_pattern) - CHAR_LENGTH(OREPLACE(edge_pattern, '|', '')) + 1;
   END IF;
 
-  IF in_return_type in ('p','P','n','N') THEN
+  IF in_return_type in ('p','P','n','N','c','C') THEN
     SET return_type = UPPER(in_return_type);
   ELSE
     SET return_type = 'P';
@@ -65,6 +100,7 @@ BEGIN
 
   SET CondStr = '';
   SET rec_cnt = 0;
+
 
   -- Drop all volatile tables if exists --
   CALL [install_database].drop_vt_sp('all_possible_path_vt');
@@ -90,35 +126,43 @@ BEGIN
     SET CondStr = '';
   END IF;
 
+  -- Prepare weight filter if avaiable --
+  IF in_weight_filter IS NULL OR in_weight_filter = '' THEN
+    SET weight_filter = '';
+    SET weight_filter2 = '';
+  ELSE
+    SET weight_filter = ' AND weight '||TRIM(in_weight_filter);
+    SET weight_filter2 = ' AND new_weight '||TRIM(in_weight_filter);
+  END IF;
+
   SET SqlStr = 'CREATE VOLATILE MULTISET TABLE all_possible_path_vt AS (
   SELECT 
     '||in_from_node_name||' AS start_id, 
     '||in_from_node_name||' AS from_id, 
     '||in_to_node_name||' AS to_id,
+    '||datetime_cond1||'
     '||weight_name||' AS weight,
     1(INTEGER) AS path_level,
     CAST(TRIM('||in_from_node_name||')||'',''||TRIM('||in_to_node_name||') AS VARCHAR(16000)) AS fullpath
-  FROM '||TRIM(in_tblname)||'
+  FROM '||TRIM(in_tblname)||' e
   WHERE '||in_from_node_name||' IN ('||TRIM(from_id)||')
   AND '||in_from_node_name||' <> '||in_to_node_name||'
   '||CondStr||'
+  '||weight_filter||'
   ) WITH DATA
   PRIMARY INDEX (from_id, to_id)
   PARTITION BY path_level
   ON COMMIT PRESERVE ROWS;';
-  --debug--
-  INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
   EXECUTE IMMEDIATE SqlStr;
 
+
   SET SqlStr = 'CREATE VOLATILE MULTISET TABLE cur_shortest_path_vt AS (
-  SELECT start_id, to_id, MIN(weight) AS weight
+  SELECT start_id, to_id, '||weight_operator3||'(weight) AS weight
   FROM all_possible_path_vt
   GROUP BY 1,2
   ) WITH DATA
   UNIQUE PRIMARY INDEX (start_id, to_id)
   ON COMMIT PRESERVE ROWS;';
-  --debug--
-  INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
   EXECUTE IMMEDIATE SqlStr;
 
 --  SET SqlStr = 'INSERT INTO cur_shortest_path_vt VALUES ('||TRIM(from_id)||',0.0)';
@@ -149,7 +193,8 @@ BEGIN
     SELECT
       a.start_id,
       e.'||in_from_node_name||', e.'||in_to_node_name||',
-      a.weight + '||weight_name2||' AS new_weight,
+      '||datetime_cond1||'
+      a.weight '||weight_operator||weight_name2||' AS new_weight,
       a.path_level +1,
       a.fullpath||'',''||TRIM(e.'||in_to_node_name||') AS fullpath
     FROM all_possible_path_vt a 
@@ -158,18 +203,16 @@ BEGIN
         AND a.to_id = e.'||in_from_node_name||'
         AND (e.'||in_from_node_name||', e.'||in_to_node_name||') NOT IN (SELECT from_id, to_id FROM all_possible_path_vt)
         AND (e.'||in_from_node_name||', e.'||in_to_node_name||') NOT IN (SELECT to_id, from_id FROM all_possible_path_vt)
+        '||datetime_cond2||'
     '||CondStr||' 
     )
     LEFT JOIN cur_shortest_path_vt c
     ON (a.start_id = c.start_id
     AND e.'||in_to_node_name||' = c.to_id)
-    WHERE (new_weight < c.weight OR c.weight IS NULL)
-    ';
-    --debug--
-    INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
+    WHERE (new_weight '||weight_operator2||' c.weight OR c.weight IS NULL)
+    '||weight_filter2;
     EXECUTE IMMEDIATE SqlStr;
     SET rec_cnt = ACTIVITY_COUNT;
-
     
     SET SqlStr = 'COLLECT STAT ON all_possible_path_vt INDEX ( from_id ,to_id )';
     EXECUTE IMMEDIATE SqlStr;
@@ -178,11 +221,9 @@ BEGIN
     EXECUTE IMMEDIATE SqlStr;
 
     SET SqlStr = 'INSERT INTO cur_shortest_path_vt
-    SELECT start_id, to_id, MIN(weight)
+    SELECT start_id, to_id, '||weight_operator3||'(weight)
     FROM all_possible_path_vt
     GROUP BY 1,2';
-    --debug--
-    INSERT INTO logtable values (CURRENT_TIMESTAMP, :SqlStr);
     EXECUTE IMMEDIATE SqlStr;
 
     SET cur_level = cur_level + 1;
@@ -196,18 +237,30 @@ BEGIN
     CALL [install_database].drop_vt_sp(in_output_tblname);
   END IF;
 
-  IF return_type ='P' THEN
-    SET SqlStr = 'SELECT fullpath, weight
+  -- Result in full paths --
+  CASE
+  WHEN return_type ='P' THEN
+    SET SqlStr = 'SELECT fullpath, weight, path_level
     FROM all_possible_path_vt';
 
-    IF in_output_tblname IS NOT NULL THEN   
-      SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
+    IF in_output_tblname IS NOT NULL THEN
+      IF in_output_volatile = 1 THEN
+        SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX ON COMMIT PRESERVE ROWS';
+      ELSE
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
+      END IF;
       EXECUTE IMMEDIATE SqlStr2;
     END IF;
     
-    SET SqlStr = SqlStr||' ORDER BY 2, 1;';
+    IF weight_type = 'P' THEN
+      SET SqlStr = SqlStr||' ORDER BY 2 DESC, 1;';
+    ELSE
+      SET SqlStr = SqlStr||' ORDER BY 2, 1;';
+    END IF;
 
-  ELSE
+  -- Result in impacted nodes --
+  WHEN return_type ='N' THEN
+
     SET SqlStr = 'SELECT node_id, path_level, weight
         FROM
         (SELECT to_id AS node_id, path_level, weight,
@@ -220,13 +273,42 @@ BEGIN
         GROUP BY start_id ';
 
     IF in_output_tblname IS NOT NULL THEN
-      SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
+      IF in_output_volatile = 1 THEN
+        SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id) ON COMMIT PRESERVE ROWS';
+      ELSE
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
+      END IF;
       EXECUTE IMMEDIATE SqlStr2;
     END IF;
 
-    SET SqlStr = SqlStr||' ORDER BY 3, 2, 1;';
+    IF weight_type = 'P' THEN
+      SET SqlStr = SqlStr||' ORDER BY 3 DESC, 2, 1;';
+    ELSE
+      SET SqlStr = SqlStr||' ORDER BY 3, 2, 1;';
+    END IF;
 
-  END IF;
+  ELSE
+    -- Closeness Centrality --
+    SET SqlStr = 'SELECT start_id AS node_id, 
+        COUNT(0)/SUM(weight) AS closeness_centrality
+        FROM 
+        (SELECT start_id, to_id, min(weight) AS weight
+         FROM all_possible_path_vt
+         GROUP BY start_id, to_id ) t
+        GROUP BY start_id';
+
+    IF in_output_tblname IS NOT NULL THEN
+      IF in_output_volatile = 1 THEN
+        SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id) ON COMMIT PRESERVE ROWS';
+      ELSE
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
+      END IF;
+      EXECUTE IMMEDIATE SqlStr2;
+    END IF;
+
+    SET SqlStr = SqlStr||' ORDER BY 1;';
+
+  END CASE;
 
 
   PREPARE s1 FROM SqlStr;
