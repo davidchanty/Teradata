@@ -23,7 +23,7 @@ def install_graph_functions():
     base_dir = Path(os.path.dirname(configure.__file__))
     sp_template_location = base_dir / "SP"
 
-    for sp_name in ['drop_vt_sp', 'graph_shortest_path_sp', 'graph_topology_sp', 'graph_path_decode_sp']:
+    for sp_name in ['drop_vt_sp', 'graph_shortest_path_sp', 'graph_topology_sp', 'graph_path_decode_sp', 'graph_pagerank_sp']:
         print(f"Installing {sp_name}...")
         with open(f'{sp_template_location}/{sp_name}.sql', 'r') as f:
             content = f.read()

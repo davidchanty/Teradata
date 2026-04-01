@@ -578,6 +578,56 @@ class td_graph_object:
         df = tdml.DataFrame.from_query(SQL).to_pandas()
         return(df)
 
+    #########################################################################################
+    # PageRank algorithm is used to measure the importance of each node based on the number #
+    # of incoming relationships and the rank of the related source nodes.                   #
+    #########################################################################################
+    def td_pagerank(self,
+                    directed = True, 
+                    damping = 0.85,
+                    max_iterations = 100, 
+                    tolerance = 1e-8,
+                    show_query = False):
+
+        if self.edge_table_name is None:
+            raise ValueError("Missing Edge Table Name (edge_table_name)")
+        if self.edge_from_node_column_name is None:
+            raise ValueError("Missing Edge FROM Column name (edge_from_node_column_name)")
+        if self.edge_to_node_column_name is None:
+            raise ValueError("Missing Edge TO Column name (edge_to_node_column_name)")
+
+        if self.edge_weight_column_name is None or self.edge_weight_column_name=="" :
+            weight_column_adj = "NULL"
+        else:
+            weight_column_adj = f"'{self.edge_weight_column_name}'"
+
+        if directed:
+            directed_adj = "'Y'"
+        else:
+            directed_adj = "'N'"
+
+
+
+        SQL = f"""CALL {self.graphdb}.graph_pagerank_sp('{self.edge_table_name}',
+                                                        '{self.edge_from_node_column_name}',
+                                                        '{self.edge_to_node_column_name}', 
+                                                         {weight_column_adj},
+                                                         {directed_adj},
+                                                         {damping},
+                                                         {max_iterations},
+                                                         {tolerance},
+                                                         iter
+                                                        );"""
+        if show_query:
+            print(SQL)
+        # Execute PageRank SP
+        result = tdml.execute_sql(SQL)
+        # Get executed iteration
+        iters = result.fetchall()[0][0]
+
+        # Get Resultset
+        result = tdml.DataFrame.from_query("SELECT node, pr_score FROM pr_sp_result_vt").to_pandas().reset_index().sort_values("pr_score", ascending=False)
+        return result, iters
 
 ############################
 # End of td_graph_function #

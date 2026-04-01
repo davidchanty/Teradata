@@ -4,9 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "TeradataGE" # Must be unique on PyPI
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="David TY Chan", email="davidty.chan@teradata.com" },
+  { name="Karthik Guruswamy", email="karthik.guruswamy@teradata.com" }
+
 ]
 description = "Teradata In-database Graph Analytics functions"
 readme = "README.md"

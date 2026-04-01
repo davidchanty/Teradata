@@ -1,8 +1,8 @@
 Metadata-Version: 2.4
 Name: TeradataGE
-Version: 0.0.2
+Version: 0.0.3
 Summary: Teradata In-database Graph Analytics functions
-Author-email: David TY Chan <davidty.chan@teradata.com>
+Author-email: David TY Chan <davidty.chan@teradata.com>, Karthik Guruswamy <karthik.guruswamy@teradata.com>
 Project-URL: Homepage, https://github.com
 Project-URL: Issues, https://github.com/issues
 Requires-Python: >=3.8

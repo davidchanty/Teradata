@@ -10,6 +10,7 @@ TeradataGE.egg-info/SOURCES.txt
 TeradataGE.egg-info/dependency_links.txt
 TeradataGE.egg-info/top_level.txt
 TeradataGE/SP/drop_vt_sp.sql
+TeradataGE/SP/graph_pagerank_sp.sql
 TeradataGE/SP/graph_path_decode_sp.sql
 TeradataGE/SP/graph_shortest_path_sp - Copy.sql
 TeradataGE/SP/graph_shortest_path_sp.sql
