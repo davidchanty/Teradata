@@ -1,5 +1,6 @@
 REPLACE PROCEDURE [install_database].graph_topology_sp
 (
+  IN in_dbname              VARCHAR(1024),
   IN in_tblname             VARCHAR(1024),
   IN in_from_node_name      VARCHAR(1024),
   IN in_to_node_name        VARCHAR(1024),
@@ -144,7 +145,7 @@ BEGIN
     '||weight_name||' AS weight,
     1(INTEGER) AS path_level,
     CAST(TRIM('||in_from_node_name||')||'',''||TRIM('||in_to_node_name||') AS VARCHAR(16000)) AS fullpath
-  FROM '||TRIM(in_tblname)||' e
+  FROM '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||' e
   WHERE '||in_from_node_name||' IN ('||TRIM(from_id)||')
   AND '||in_from_node_name||' <> '||in_to_node_name||'
   '||CondStr||'
@@ -198,7 +199,7 @@ BEGIN
       a.path_level +1,
       a.fullpath||'',''||TRIM(e.'||in_to_node_name||') AS fullpath
     FROM all_possible_path_vt a 
-    INNER JOIN '||TRIM(in_tblname)||' e
+    INNER JOIN '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||' e
     ON (a.path_level=' || TRIM(cur_level) ||'
         AND a.to_id = e.'||in_from_node_name||'
         AND (e.'||in_from_node_name||', e.'||in_to_node_name||') NOT IN (SELECT from_id, to_id FROM all_possible_path_vt)
@@ -234,7 +235,11 @@ BEGIN
   -- Generate the final output dataset  --
   ----------------------------------------
   IF in_output_tblname IS NOT NULL THEN
-    CALL [install_database].drop_vt_sp(in_output_tblname);
+    IF in_output_volatile = 1 THEN
+      CALL [install_database].drop_vt_sp(in_output_tblname);
+    ELSE
+      CALL [install_database].drop_vt_sp(TRIM(in_dbname)||'.'||TRIM(in_output_tblname));
+    END IF;
   END IF;
 
   -- Result in full paths --
@@ -247,7 +252,7 @@ BEGIN
       IF in_output_volatile = 1 THEN
         SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX ON COMMIT PRESERVE ROWS';
       ELSE
-        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_dbname)||'.'||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA NO PRIMARY INDEX';
       END IF;
       EXECUTE IMMEDIATE SqlStr2;
     END IF;
@@ -276,7 +281,7 @@ BEGIN
       IF in_output_volatile = 1 THEN
         SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id) ON COMMIT PRESERVE ROWS';
       ELSE
-        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_dbname)||'.'||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
       END IF;
       EXECUTE IMMEDIATE SqlStr2;
     END IF;
@@ -301,7 +306,7 @@ BEGIN
       IF in_output_volatile = 1 THEN
         SET SqlStr2 = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id) ON COMMIT PRESERVE ROWS';
       ELSE
-        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
+        SET SqlStr2 = 'CREATE MULTISET TABLE '||TRIM(in_dbname)||'.'||TRIM(in_output_tblname)||' AS ('||SqlStr||') WITH DATA PRIMARY INDEX (node_id)';
       END IF;
       EXECUTE IMMEDIATE SqlStr2;
     END IF;

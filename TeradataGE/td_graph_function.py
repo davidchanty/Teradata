@@ -53,6 +53,7 @@ class td_graph_object:
                  node_id_column_name = None,
                  node_type_column_name = None,
                  node_label_column_name = None,
+                 database_name = None,
                  source_id = None,
                  target_id = None
                 ):
@@ -84,7 +85,12 @@ class td_graph_object:
         self.shortpath_path_result_table = None
         self.max_path_length = 100
         self.edge_type_list = None
-
+        if database_name is None:
+            self.database_name = tdml.execute_sql("SELECT database").fetchone()[0]
+        else:
+            self.database_name = database_name
+        self.last_outputtable = None
+        self.last_outputtable_kind = None
 
     #######################################
     # Displace Edge definition and record #
@@ -279,11 +285,14 @@ class td_graph_object:
             output_table_adj = "NULL"
             temp_output_table_adj = "NULL"
         else:
+            self.last_outputtable = output_table
             output_table_adj = f"'{output_table}'"
             if temp_output_table:
                 temp_output_table_adj = "1"
+                self.last_outputtable_kind = "V"
             else:
                 temp_output_table_adj = "0"
+                self.last_outputtable_kind = "T"
             self.topology_path_result_table = output_table
 
         self.max_path_length = max_path_length
@@ -304,7 +313,8 @@ class td_graph_object:
                   pattern_str.append(pattern1)
           adj_edge_pattern = "'" + "|".join(pattern_str) + "'"
 
-        SQL = f"""CALL {self.graphdb}.graph_topology_sp('{self.edge_table_name}',
+        SQL = f"""CALL {self.graphdb}.graph_topology_sp('{self.database_name}',
+                                                        '{self.edge_table_name}',
                                                         '{self.edge_from_node_column_name}',
                                                         '{self.edge_to_node_column_name}', 
                                                          {weight_column_adj}, 
@@ -404,7 +414,23 @@ class td_graph_object:
 
         self.max_path_length = max_path_length
 
-        SQL = f"""CALL {self.graphdb}.graph_shortest_path_sp('{self.edge_table_name}',
+        if output_table is None or output_table=="" :
+            output_table_adj = "NULL"
+            temp_output_table_adj = "NULL"
+        else:
+            self.last_outputtable = output_table
+            output_table_adj = f"'{output_table}'"
+            if temp_output_table:
+                temp_output_table_adj = "1"
+                self.last_outputtable_kind = "V"
+            else:
+                temp_output_table_adj = "0"
+                self.last_outputtable_kind = "T"
+            self.topology_path_result_table = output_table
+
+
+        SQL = f"""CALL {self.graphdb}.graph_shortest_path_sp('{self.database_name}',
+                                                             '{self.edge_table_name}',
                                                              '{self.edge_from_node_column_name}',
                                                              '{self.edge_to_node_column_name}', 
                                                               {weight_column_adj}, 
@@ -431,8 +457,9 @@ class td_graph_object:
     # Converting existing path from node id to node label with optional attributes #
     ################################################################################
     def td_graph_path_decode(self, 
-                             input_table, 
-                             edge_attributes=None, 
+                             input_table = None,
+                             input_table_kind = 'V', 
+                             edge_attributes = None, 
                              output_table = None, 
                              temp_output_table = True,
                              include_plot = False,
@@ -449,8 +476,16 @@ class td_graph_object:
             raise ValueError("Missing Node column Name (node_id_column_name)")
         if self.node_label_column_name is None:
             raise ValueError("Missing Node Label Column Name (node_label_column_name)")
+
         if input_table is None:
+            input_table_adj = self.last_outputtable
+            input_table_kind_adj = self.last_outputtable_kind
+        else:
+            input_table_adj = input_table
+            input_table_kind_adj = input_table_kind
+        if input_table_adj is None:
             raise ValueError("Missing tablename with pathname (input_table)")
+       
 
         if self.topology_path_result_table is None or self.topology_path_result_column is None:
             raise ValueError("Missing topology_path_result_table, please run td_topology function with output table!!!")
@@ -481,7 +516,9 @@ class td_graph_object:
             else:
               temp_output_table_adj = "0"
 
-        SQL = f"""CALL {self.graphdb}.graph_path_decode_sp('{input_table}',
+        SQL = f"""CALL {self.graphdb}.graph_path_decode_sp('{self.database_name}',
+                                                           '{input_table_adj}',
+                                                           '{input_table_kind_adj}',
                                                            '{self.topology_path_result_column}',
                                                            '{self.edge_table_name}',
                                                            '{self.edge_from_node_column_name}',
@@ -569,7 +606,7 @@ class td_graph_object:
                    {adj_node_type}
                    {self.node_label_column_name} AS node_name
                    {adj_node_attributes}
-                FROM {input_table} i
+                FROM {self.database_name}.{input_table} i
                 LEFT JOIN {self.node_table_name} n
                 ON (i.Node_id = n.{self.node_id_column_name})"""
         if show_query:
@@ -608,7 +645,8 @@ class td_graph_object:
 
 
 
-        SQL = f"""CALL {self.graphdb}.graph_pagerank_sp('{self.edge_table_name}',
+        SQL = f"""CALL {self.graphdb}.graph_pagerank_sp('{self.database_name}',
+                                                        '{self.edge_table_name}',
                                                         '{self.edge_from_node_column_name}',
                                                         '{self.edge_to_node_column_name}', 
                                                          {weight_column_adj},

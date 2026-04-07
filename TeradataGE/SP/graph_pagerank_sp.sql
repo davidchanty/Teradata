@@ -1,5 +1,6 @@
 REPLACE PROCEDURE [install_database].graph_pagerank_sp
 (
+  IN in_dbname                    VARCHAR(1024),
   IN in_edge_tblname              VARCHAR(1024),
   IN in_edge_from_colname         VARCHAR(1024),
   IN in_edge_to_colname           VARCHAR(1024),
@@ -99,22 +100,22 @@ BEGIN
     SET SqlStr = 'INSERT INTO pr_sp_work_edges_vt
       SELECT '||TRIM(in_edge_from_colname)||' AS src, '||TRIM(in_edge_to_colname)||' AS dst,
       '||CondStr||'
-      FROM '||TRIM(in_edge_tblname)||';';
+      FROM '||TRIM(in_dbname)||'.'||TRIM(in_edge_tblname)||';';
     EXECUTE IMMEDIATE SqlStr;
   ELSE
     SET SqlStr = 'INSERT INTO pr_sp_work_edges_vt
       SELECT '||TRIM(in_edge_from_colname)||' AS src, '||TRIM(in_edge_to_colname)||' AS dst,
       '||CondStr||'
-      FROM '||TRIM(in_edge_tblname)||';';
+      FROM '||TRIM(in_dbname)||'.'||TRIM(in_edge_tblname)||';';
     EXECUTE IMMEDIATE SqlStr;
     SET SqlStr = 'INSERT INTO pr_sp_work_edges_vt
       SELECT '||TRIM(in_edge_to_colname)||' AS src, '||TRIM(in_edge_from_colname)||' AS dst,
       '||CondStr||'
-      FROM '||TRIM(in_edge_tblname)||'
+      FROM '||TRIM(in_dbname)||'.'||TRIM(in_edge_tblname)||'
       WHERE NOT EXISTS (
         SELECT 1 FROM pr_sp_work_edges_vt w
-        WHERE w.src = '||in_edge_tblname||'.'||TRIM(in_edge_to_colname)||' 
-        AND w.dst = '||in_edge_tblname||'.'||TRIM(in_edge_from_colname)||'
+        WHERE w.src = '||TRIM(in_dbname)||'.'||in_edge_tblname||'.'||TRIM(in_edge_to_colname)||' 
+        AND w.dst = '||TRIM(in_dbname)||'.'||in_edge_tblname||'.'||TRIM(in_edge_from_colname)||'
        );';
     EXECUTE IMMEDIATE SqlStr;
   END IF;
