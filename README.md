@@ -13,3 +13,49 @@ Graph Engines excel where data is heavily interconnected and must be queried qui
 - Running graph neural network workloads
 - Performing multi-hop queries
 - Real-time analytics
+
+Prerequisites:
+•	Database:
+    o	Teradata database V17.20 or above.
+    o	A database [GraphDB] for Stored Procedure Installation.
+    o	Database Privileges for installer.
+        1.	GRANT CREATE Procedure on [GraphDB] to [Installer];
+        2.	GRANT EXECUTE Procedure on [GraphDB] to [GraphDB];
+        3.	GRANT ALL on [TargetDB] to [GraphDB] with grant option;
+    o	Database Privileges for user.
+        1.	GRANT EXECUTE Procedure on [GraphDB] to [User];
+•	Client:
+    o	Python 3.8 or above
+    o	The following packages are required:
+        1.	teradataml>=20.0.0.9
+        2.	teradatasql>=20.0.0.40
+        3.	pandas>=2.2.0
+        4.	pathlib>=1.0.1
+        5.	plotly>=6.3.1
+
+
+Installation:
+•	Download and install TeradataGE python package from PyPI:
+    o	Command: pip install teradatage
+•	Install Graph Analysis SPs from python with TeradataML and TeradataGE packages:
+# Teradata python package
+from teradataml import *
+import getpass
+from TeradataGE import td_graph_function, configure, install_db_objects
+
+# Database locator: where graph functions are being installed 
+configure.graph_install_location = "GraphLib"
+
+# Connect to Teradata database
+hostname = "xx.xx.xx.xx"
+user = input(prompt=f"Username for SPs instalation:")
+password = getpass.getpass(prompt=f"Database password for {user}:")
+logmech = "TD2"
+eng = create_context(host = hostname, username = user, password = password, logmech = logmech)
+print(eng)
+
+# Install stored procedures
+install_db_objects.install_graph_functions()
+
+# Disconnect from database
+remove_context()
