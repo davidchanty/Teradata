@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "TeradataGE" # Must be unique on PyPI
-version = "0.0.7"
+version = "0.0.8"
 authors = [
   { name="David TY Chan", email="davidty.chan@teradata.com" },
   { name="Karthik Guruswamy", email="karthik.guruswamy@teradata.com" }
@@ -25,5 +25,6 @@ dependencies = [
     # Add other dependencies here
 ]
 [project.urls]
-Homepage = "https://github.com"
+Homepage = "https://github.com/davidchanty/Teradata/tree/main/TeradataGE"
+Documentation = "https://github.com/davidchanty/Teradata/tree/main/TeradataGE/Documents"
 Issues = "https://github.com/issues"
