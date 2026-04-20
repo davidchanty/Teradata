@@ -55,7 +55,10 @@ class td_graph_object:
                  node_label_column_name = None,
                  database_name = None,
                  source_id = None,
-                 target_id = None
+                 target_id = None,
+                 pr_table_name = None,
+                 pr_node_name = None,
+                 pr_score_name = None
                 ):
 
         if configure.graph_install_location is None:
@@ -83,6 +86,9 @@ class td_graph_object:
         self.topology_path_result_table = None
         self.topology_path_result_column = None
         self.shortpath_path_result_table = None
+        self.pr_table_name = None
+        self.pr_node_name = None
+        self.pr_score_name = None
         self.max_path_length = 100
         self.edge_type_list = None
         if database_name is None:
@@ -624,6 +630,8 @@ class td_graph_object:
                     damping = 0.85,
                     max_iterations = 100, 
                     tolerance = 1e-8,
+                    output_table = None, 
+                    temp_output_table = True,
                     show_query = False):
 
         if self.edge_table_name is None:
@@ -644,6 +652,19 @@ class td_graph_object:
             directed_adj = "'N'"
 
 
+        if output_table is None or output_table=="" :
+            output_table_adj = "NULL"
+            temp_output_table_adj = "0"
+        else:
+            self.pr_table_name = output_table
+            self.pr_node_name = "node"
+            self.pr_score_name = "pr_score"
+            output_table_adj = f"'{output_table}'"
+            if temp_output_table:
+              temp_output_table_adj = "1"
+            else:
+              temp_output_table_adj = "0"
+
 
         SQL = f"""CALL {self.graphdb}.graph_pagerank_sp('{self.database_name}',
                                                         '{self.edge_table_name}',
@@ -654,6 +675,8 @@ class td_graph_object:
                                                          {damping},
                                                          {max_iterations},
                                                          {tolerance},
+                                                         {output_table_adj},
+                                                         {temp_output_table_adj},
                                                          iter
                                                         );"""
         if show_query:
@@ -663,9 +686,96 @@ class td_graph_object:
         # Get executed iteration
         iters = result.fetchall()[0][0]
 
+
         # Get Resultset
-        result = tdml.DataFrame.from_query("SELECT node, pr_score FROM pr_sp_result_vt").to_pandas().reset_index().sort_values("pr_score", ascending=False)
+        result = tdml.DataFrame.from_query("SELECT node, pr_score FROM pr_sp_result_vt").sort("pr_score", ascending=False)
         return result, iters
+
+
+    #############################################################################################
+    # The Louvain algorithm is a method for detecting communities (clusters) in large networks. #
+    # It works with PR score from Page Rank                                                     #
+    #############################################################################################
+    def td_louvain_community(self,
+                             directed = True,
+                             p_threshold = 0.5,                             
+                             max_iterations = 100,
+                             p_resolution = 1.0,
+                             output_table = None, 
+                             temp_output_table = True,
+                             show_query = False):
+        # Check edge info
+        if self.edge_table_name is None:
+            raise ValueError("Missing Edge Table Name (edge_table_name)")
+        if self.edge_from_node_column_name is None:
+            raise ValueError("Missing Edge FROM Column name (edge_from_node_column_name)")
+        if self.edge_to_node_column_name is None:
+            raise ValueError("Missing Edge TO Column name (edge_to_node_column_name)")
+
+        # Check PR info
+        if self.pr_table_name is None:
+            raise ValueError("Missing PageRank Score Table Name (pr_table_name)")
+        if self.pr_node_name is None:
+            raise ValueError("Missing PageRank Node Name (pr_node_name)")
+        if self.pr_score_name is None:
+            raise ValueError("Missing PageRank score Table Name (pr_score_name)")
+
+        # Check output table info
+        if output_table is None:
+            raise ValueError("Please provide output Table Name and or Table Type (output_table & temp_output_table)")
+
+        if self.edge_weight_column_name is None or self.edge_weight_column_name=="" :
+            weight_column_adj = "NULL"
+        else:
+            weight_column_adj = f"'{self.edge_weight_column_name}'"
+
+        if directed:
+            directed_adj = "1"
+        else:
+            directed_adj = "0"
+
+        if temp_output_table:
+            temp_output_table_adj = "1"
+        else:
+            temp_output_table_adj = "0"
+
+
+        SQL = f"""CALL {self.graphdb}.graph_louvain_communities_sp('{self.database_name}',
+                                                                   '{self.edge_table_name}',
+                                                                   '{self.edge_from_node_column_name}',
+                                                                   '{self.edge_to_node_column_name}', 
+                                                                    {weight_column_adj},
+                                                                    {directed_adj},
+                                                                   '{self.pr_table_name}',
+                                                                   '{self.pr_node_name}',
+                                                                   '{self.pr_score_name}',
+                                                                    {p_threshold},
+                                                                    {max_iterations},
+                                                                    {p_resolution},
+                                                                   '{output_table}',
+                                                                    {temp_output_table_adj},
+                                                                    p_iterations, p_communities, p_nodes, p_modularity
+                                                                    );"""
+
+        if show_query:
+            print(SQL)
+        # Execute Louvain Communities SP
+        result = tdml.execute_sql(SQL).fetchall()
+        # Get executed iteration
+
+        p_iterations  = result[0][0]
+        p_communities = result[0][1]
+        p_nodes       = result[0][2]
+        p_modularity  = result[0][3]
+
+        # Get Resultset
+        if temp_output_table:
+            df = tdml.DataFrame(output_table).sort("comm_id")
+        else:
+            df = tdml.DataFrame(tdml.in_schema(self.database_name, output_table)).sort("comm_id")
+
+        return df, {"iterations": p_iterations, "communities": p_communities, "node": p_nodes, "modularity": p_modularity}
+
 
 ############################
 # End of td_graph_function #

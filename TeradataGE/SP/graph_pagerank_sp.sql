@@ -9,6 +9,8 @@ REPLACE PROCEDURE [install_database].graph_pagerank_sp
   IN in_p_damping                 FLOAT,
   IN in_p_max_iters               INTEGER,
   IN in_p_tolerance               FLOAT,
+  IN in_output_tblname            VARCHAR(1024),
+  IN in_output_volatile           BYTEINT,
   OUT out_v_iter                  INTEGER
 )
 BEGIN
@@ -251,6 +253,25 @@ BEGIN
     FROM pr_sp_rank_curr_vt;';
 
   EXECUTE IMMEDIATE SqlStr;
+
+  ----------------------------------------------
+  -- Step 7: Create output table if requested --
+  ----------------------------------------------
+  IF in_output_tblname IS NOT NULL THEN
+    IF in_output_volatile = 1 THEN
+      CALL [install_database].drop_vt_sp(in_output_tblname);
+      SET SqlStr = 'CREATE MULTISET VOLATILE TABLE '||TRIM(in_output_tblname)||' AS (SELECT * FROM pr_sp_result_vt) WITH DATA PRIMARY INDEX (node) ON COMMIT PRESERVE ROWS';
+      EXECUTE IMMEDIATE SqlStr;
+      SET SqlStr = 'COLLECT STAT ON '||TRIM(in_output_tblname)||' INDEX (node)';
+      EXECUTE IMMEDIATE SqlStr;
+    ELSE
+      CALL [install_database].drop_vt_sp(TRIM(in_dbname)||'.'||TRIM(in_output_tblname));
+      SET SqlStr = 'CREATE MULTISET TABLE '||TRIM(in_dbname)||'.'||TRIM(in_output_tblname)||' AS (SELECT * FROM pr_sp_result_vt) WITH DATA PRIMARY INDEX (node)';
+      EXECUTE IMMEDIATE SqlStr;
+      SET SqlStr = 'COLLECT STAT ON '||TRIM(in_dbname)||'.'||TRIM(in_output_tblname)||' INDEX (node)';
+      EXECUTE IMMEDIATE SqlStr;
+    END IF;
+  END IF;
 
   SET out_v_iter = v_iter;
 
