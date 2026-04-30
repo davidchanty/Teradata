@@ -59,13 +59,13 @@ BEGIN
                     '||TRIM(in_to_node_name)||'             AS node_b,
                     CAST('||TRIM(weight_name)||' AS FLOAT) AS weight
              FROM   '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||'
-             WHERE  score >= ' || TRIM(p_threshold) || '
+             WHERE  '||TRIM(weight_name)||' >= ' || TRIM(p_threshold) || '
              UNION ALL
              SELECT '||TRIM(in_to_node_name)||',
                     '||TRIM(in_from_node_name)||',
                     CAST('||TRIM(weight_name)||' AS FLOAT)
              FROM   '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||'
-             WHERE  score >= ' || TRIM(p_threshold) ||
+             WHERE  '||TRIM(weight_name)||' >= ' || TRIM(p_threshold) ||
         ' ) WITH DATA
           PRIMARY INDEX (node_a)
           ON COMMIT PRESERVE ROWS;';
@@ -76,7 +76,7 @@ BEGIN
                     '||TRIM(in_to_node_name)||'             AS node_b,
                     CAST('||TRIM(weight_name)||' AS FLOAT) AS weight
              FROM   '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||'
-             WHERE  score >= ' || TRIM(p_threshold) || '
+             WHERE  '||TRIM(weight_name)||' >= ' || TRIM(p_threshold) || '
           ) WITH DATA
           PRIMARY INDEX (node_a)
           ON COMMIT PRESERVE ROWS;';

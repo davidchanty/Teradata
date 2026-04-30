@@ -7,8 +7,7 @@ REPLACE PROCEDURE [install_database].graph_topology_sp
   IN in_weight_name         VARCHAR(1024),
   IN in_edgetype_name       VARCHAR(1024),
   IN in_datetime_name       VARCHAR(1024),
-  IN in_sources_table       VARCHAR(200),
-  IN in_node_col            VARCHAR(128),
+  IN in_from_id             VARCHAR(1024),
   IN in_weight_type         CHAR(1),
   IN in_weight_filter       VARCHAR(1024),
   IN in_max_level           INTEGER,
@@ -24,7 +23,7 @@ BEGIN
   DECLARE CondStr                 VARCHAR(1024);
   DECLARE weight_name             VARCHAR(1024);
   DECLARE weight_name2            VARCHAR(1024);
---  DECLARE from_id                 VARCHAR(1024);
+  DECLARE from_id                 VARCHAR(1024);
   DECLARE datetime_cond1          VARCHAR(1024);
   DECLARE datetime_cond2          VARCHAR(1024);
   DECLARE weight_type             CHAR(1);
@@ -80,7 +79,7 @@ BEGIN
     END IF;
   END IF;
 
---  SET from_id = in_from_id;
+  SET from_id = in_from_id;
 
   IF in_max_level IS NULL THEN
     SET max_level = 10;
@@ -147,7 +146,7 @@ BEGIN
     1(INTEGER) AS path_level,
     CAST(TRIM('||in_from_node_name||')||'',''||TRIM('||in_to_node_name||') AS VARCHAR(16000)) AS fullpath
   FROM '||TRIM(in_dbname)||'.'||TRIM(in_tblname)||' e
-  WHERE '||in_from_node_name||' IN (SELECT '||TRIM(in_node_col)||' FROM '||TRIM(in_sources_table)||')
+  WHERE '||in_from_node_name||' IN ('||TRIM(from_id)||')
   AND '||in_from_node_name||' <> '||in_to_node_name||'
   '||CondStr||'
   '||weight_filter||'
