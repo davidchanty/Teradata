@@ -585,14 +585,16 @@ class td_graph_object:
         else:
             weight_column_adj = f"'{self.edge_weight_column_name}'"
 
-        if edge_attributes is None:
-            if self.edge_attributes is None:
-                raise ValueError("Missing Edge Attribute column(s) (edge_attributes)!!!")
+        if edge_attributes is None and self.edge_attributes is None:
+            edge_attributes_adj = 'NULL'
         else:
             if isinstance(edge_attributes, list):
                 self.edge_attributes = edge_attributes
+                edge_attributes_adj = "'" + "|".join(self.edge_attributes) + "'" 
             else:
                 self.edge_attributes = [edge_attributes]
+                edge_attributes_adj = "'" + edge_attributes + "'"
+
 
         if output_table is None:
             output_table_adj = 'NULL'
@@ -614,7 +616,7 @@ class td_graph_object:
                                                            '{self.edge_from_node_column_name}',
                                                            '{self.edge_to_node_column_name}',
                                                            {weight_column_adj},
-                                                           '{"|".join(self.edge_attributes)}',
+                                                           {edge_attributes_adj},
                                                            '{self.node_table_name}',
                                                            '{self.node_id_column_name}',
                                                            '{self.node_label_column_name}',
@@ -629,7 +631,11 @@ class td_graph_object:
         rows0 = result.fetchall()
         result.nextset()
         rows1 = result.fetchall()
-        local_df = pd.DataFrame(rows1, columns=["path_level","from_id", "to_id","n1_label"] + self.edge_attributes + ["n2_label", "weight"] )
+        if self.edge_attributes is None:
+            local_df = pd.DataFrame(rows1, columns=["path_level","from_id", "to_id","n1_label"] + ["n2_label", "weight"] )
+        else:
+            local_df = pd.DataFrame(rows1, columns=["path_level","from_id", "to_id","n1_label"] + self.edge_attributes + ["n2_label", "weight"] )
+
         local_df = local_df.reset_index(drop=True)
 
         if include_plot:

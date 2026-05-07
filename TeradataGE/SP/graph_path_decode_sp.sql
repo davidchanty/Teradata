@@ -30,8 +30,13 @@ BEGIN
   CALL [install_database].drop_vt_sp('graph_topoplogy_decode_vt');
 
   -- Select the columnsname --
-  SELECT OREPLACE(:in_edge_labels_colname, '|', ',e.') INTO :edge_labels_colname;
-  SET edge_labels_colname = 'e.'||edge_labels_colname;
+  IF in_edge_labels_colname IS NOT NULL THEN
+    SELECT OREPLACE(:in_edge_labels_colname, '|', ',e.') INTO :edge_labels_colname;
+    SET edge_labels_colname = 'e.'||edge_labels_colname||',';
+  ELSE
+    SET edge_labels_colname = '';
+  END IF;
+
 
   IF in_edge_weight_colname IS NULL THEN
     SET edge_weight_colname = '1.0 AS weight';
@@ -87,7 +92,7 @@ BEGIN
     t.token_no AS path_level,
     t.from_id, t.to_id,
     n1.'||in_node_label_colname||' AS n1_label,
-    '||edge_labels_colname||',
+    '||edge_labels_colname||'
     n2.'||in_node_label_colname||' AS n2_label,
     '||edge_weight_colname||'
   FROM 
